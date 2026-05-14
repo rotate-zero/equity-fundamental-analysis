@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>API Test</title>
+<style>
+  body { background:#0a0a1a; color:#c8d8ff; font-family:monospace; padding:20px; }
+  h2 { color:#4a9aff; margin-top:30px; }
+  .test { background:#0e1428; border:1px solid #1a2a50; border-radius:8px; padding:16px; margin:10px 0; }
+  .label { font-size:11px; color:#6080aa; margin-bottom:6px; }
+  .url { color:#88aaff; font-size:12px; word-break:break-all; margin-bottom:8px; }
+  .result { white-space:pre-wrap; font-size:11px; max-height:200px; overflow-y:auto; }
+  .ok   { color:#00cc66; }
+  .err  { color:#cc3300; }
+  .pending { color:#ccaa00; }
+  button { background:#1a3a7a; color:#c8d8ff; border:1px solid #2a4a9a; border-radius:5px;
+           padding:8px 20px; cursor:pointer; font-family:monospace; font-size:13px; margin:4px; }
+  button:hover { background:#2a4a9a; }
+  input { background:#070712; color:#c8d8ff; border:1px solid #2a3a6a; border-radius:4px;
+          padding:6px 12px; font-family:monospace; font-size:14px; width:120px; }
+  #summary { background:#050a18; border:2px solid #1a2a50; border-radius:8px; padding:16px; margin-bottom:20px; }
+</style>
+</head>
+<body>
+
+<h1 style="color:#8ab0ff">📡 API Connectivity Test</h1>
+
+<div id="summary">
+  <div style="color:#6080aa;font-size:11px;margin-bottom:8px">SYMBOL TO TEST</div>
+  <input id="sym" value="AMD" style="text-transform:uppercase">
+  &nbsp;
+  <button onclick="runAll()">▶ Run All Tests</button>
+  <div id="summaryText" style="margin-top:12px;font-size:12px;color:#aac0ff"></div>
+</div>
+
+<h2>1. Backend Health</h2>
+<div class="test">
+  <div class="label">GET http://localhost:8000/health</div>
+  <div class="result pending" id="r_health">waiting…</div>
+</div>
+
+<h2>2. FMP — Profile / Current Price (used by overview)</h2>
+<div class="test">
+  <div class="label">GET /search/{symbol} → tests FMP /profile</div>
+  <div class="result pending" id="r_search">waiting…</div>
+</div>
+
+<h2>3. FMP — Historical Price EOD (chart price rings)</h2>
+<div class="test">
+  <div class="label">Direct FMP call: /stable/historical-price-eod/full?symbol=AMD&limit=5</div>
+  <div class="url" id="url_price"></div>
+  <div class="result pending" id="r_price">waiting…</div>
+</div>
+
+<h2>4. Alpha Vantage — Income Statement (chart fundamentals)</h2>
+<div class="test">
+  <div class="label">Direct AV call: INCOME_STATEMENT quarterly</div>
+  <div class="url" id="url_income"></div>
+  <div class="result pending" id="r_income">waiting…</div>
+</div>
+
+<h2>5. Alpha Vantage — Cash Flow (chart fundamentals)</h2>
+<div class="test">
+  <div class="label">Direct AV call: CASH_FLOW quarterly</div>
+  <div class="url" id="url_cashflow"></div>
+  <div class="result pending" id="r_cashflow">waiting…</div>
+</div>
+
+<h2>6. Backend — Full Chart Endpoint</h2>
+<div class="test">
+  <div class="label">GET http://localhost:8000/chart/{symbol}</div>
+  <div class="result pending" id="r_chart">waiting…</div>
+</div>
+
+<h2>7. Backend — Fundamentals Debug</h2>
+<div class="test">
+  <div class="label">GET http://localhost:8000/chart-debug-fund/{symbol}</div>
+  <div class="result pending" id="r_fund_debug">waiting…</div>
+</div>
+
+<script>
+const FMP_KEY = "ys6mmlbxqX3ttCGFP1tD0ggbMfz9VgUl"
+const AV_KEY  = "VKQEPMVA9987HPWI"   // ← paste your AV key here to test
+
+function sym() { return document.getElementById("sym").value.toUpperCase().trim() }
+
+function setResult(id, ok, text) {
+  const el = document.getElementById(id)
+  el.className = "result " + (ok ? "ok" : "err")
+  el.textContent = typeof text === "object" ? JSON.stringify(text, null, 2) : text
+}
+
+async function testBackendHealth() {
+  try {
+    const r = await fetch("http://localhost:8000/health")
+    const d = await r.json()
+    setResult("r_health", true, "✓ Backend running: " + JSON.stringify(d))
+    return true
+  } catch(e) {
+    setResult("r_health", false, "✗ Backend not reachable: " + e.message + "\n\nMake sure uvicorn is running:\n  uvicorn main:app --reload")
+    return false
+  }
+}
+
+async function testSearch() {
+  try {
+    const r = await fetch(`http://localhost:8000/search/${sym()}`)
+    const d = await r.json()
+    if (r.ok) setResult("r_search", true, "✓ " + JSON.stringify(d))
+    else setResult("r_search", false, "✗ HTTP " + r.status + ": " + JSON.stringify(d))
+  } catch(e) {
+    setResult("r_search", false, "✗ " + e.message)
+  }
+}
+
+async function testFMPPrice() {
+  const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${sym()}&limit=5&apikey=${FMP_KEY}`
+  document.getElementById("url_price").textContent = url.replace(FMP_KEY, "***KEY***")
+  try {
+    const r = await fetch(url)
+    const d = await r.json()
+    if (!r.ok) {
+      setResult("r_price", false, "✗ HTTP " + r.status + ": " + JSON.stringify(d).slice(0,200))
+    } else if (Array.isArray(d) && d.length > 0) {
+      setResult("r_price", true, `✓ Got ${d.length} rows. First row:\n` + JSON.stringify(d[0], null, 2))
+    } else {
+      setResult("r_price", false, "✗ Unexpected format: " + JSON.stringify(d).slice(0,300))
+    }
+  } catch(e) {
+    setResult("r_price", false, "✗ " + e.message)
+  }
+}
+
+async function testAVIncome() {
+  const url = `https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${sym()}&apikey=${AV_KEY}`
+  document.getElementById("url_income").textContent = url.replace(AV_KEY, "***KEY***")
+  if (AV_KEY === "YOUR_ALPHA_VANTAGE_KEY_HERE") {
+    setResult("r_income", false, "⚠ Paste your Alpha Vantage key into this file (line: AV_KEY = ...)\nGet free key: https://www.alphavantage.co/support/#api-key")
+    return
+  }
+  try {
+    const r = await fetch(url)
+    const d = await r.json()
+    if (d["Note"] || d["Information"]) {
+      setResult("r_income", false, "✗ AV rate limit or invalid key:\n" + (d["Note"] || d["Information"]))
+    } else if (d.quarterlyReports && d.quarterlyReports.length > 0) {
+      const q = d.quarterlyReports[0]
+      setResult("r_income", true,
+        `✓ Got ${d.quarterlyReports.length} quarterly reports\n` +
+        `Most recent: ${q.fiscalDateEnding}\n` +
+        `Revenue: ${q.totalRevenue}\n` +
+        `Net Income: ${q.netIncome}\n` +
+        `Keys: ${Object.keys(q).join(", ")}`)
+    } else {
+      setResult("r_income", false, "✗ Unexpected: " + JSON.stringify(d).slice(0,300))
+    }
+  } catch(e) {
+    setResult("r_income", false, "✗ " + e.message)
+  }
+}
+
+async function testAVCashflow() {
+  const url = `https://www.alphavantage.co/query?function=CASH_FLOW&symbol=${sym()}&apikey=${AV_KEY}`
+  document.getElementById("url_cashflow").textContent = url.replace(AV_KEY, "***KEY***")
+  if (AV_KEY === "YOUR_ALPHA_VANTAGE_KEY_HERE") {
+    setResult("r_cashflow", false, "⚠ Paste your Alpha Vantage key into this file first")
+    return
+  }
+  try {
+    const r = await fetch(url)
+    const d = await r.json()
+    if (d["Note"] || d["Information"]) {
+      setResult("r_cashflow", false, "✗ AV rate limit:\n" + (d["Note"] || d["Information"]))
+    } else if (d.quarterlyReports && d.quarterlyReports.length > 0) {
+      const q = d.quarterlyReports[0]
+      setResult("r_cashflow", true,
+        `✓ Got ${d.quarterlyReports.length} quarterly reports\n` +
+        `Most recent: ${q.fiscalDateEnding}\n` +
+        `Operating CF field name: ${Object.keys(q).find(k => k.toLowerCase().includes("operating")) || "not found"}\n` +
+        `Value: ${q.operatingCashflow || q.operatingCashFlow || "N/A"}`)
+    } else {
+      setResult("r_cashflow", false, "✗ " + JSON.stringify(d).slice(0,300))
+    }
+  } catch(e) {
+    setResult("r_cashflow", false, "✗ " + e.message)
+  }
+}
+
+async function testChartEndpoint() {
+  try {
+    const r = await fetch(`http://localhost:8000/chart/${sym()}`)
+    const text = await r.text()
+    if (r.ok) {
+      const d = JSON.parse(text)
+      setResult("r_chart", true,
+        `✓ HTTP 200\n` +
+        `daily: ${d.daily?.length ?? 0} rows\n` +
+        `weekly: ${d.weekly?.length ?? 0} rows\n` +
+        `monthly: ${d.monthly?.length ?? 0} rows\n` +
+        `revenue: ${d.revenue?.length ?? 0} quarters\n` +
+        `net_income: ${d.net_income?.length ?? 0} quarters\n` +
+        `cash_flow: ${d.cash_flow?.length ?? 0} quarters\n` +
+        `current_price: ${d.current_price}`)
+    } else {
+      setResult("r_chart", false, "✗ HTTP " + r.status + ":\n" + text.slice(0,400))
+    }
+  } catch(e) {
+    setResult("r_chart", false, "✗ " + e.message + "\n\nIf CORS error: the backend is crashing. Check uvicorn terminal for Python traceback.")
+  }
+}
+
+async function testFundDebug() {
+  try {
+    const r = await fetch(`http://localhost:8000/chart-debug-fund/${sym()}`)
+    if (r.ok) {
+      const d = await r.json()
+      setResult("r_fund_debug", true, JSON.stringify(d, null, 2))
+    } else {
+      const t = await r.text()
+      setResult("r_fund_debug", false, "✗ HTTP " + r.status + ": " + t.slice(0,300))
+    }
+  } catch(e) {
+    setResult("r_fund_debug", false, "✗ " + e.message)
+  }
+}
+
+async function runAll() {
+  document.getElementById("summaryText").textContent = "Running tests…"
+  const tests = [
+    testBackendHealth,
+    testSearch,
+    testFMPPrice,
+    testAVIncome,
+    testAVCashflow,
+    testChartEndpoint,
+    testFundDebug,
+  ]
+  for (const t of tests) {
+    await t()
+    await new Promise(r => setTimeout(r, 300))  // small delay to avoid rate limits
+  }
+  const oks   = document.querySelectorAll(".result.ok").length
+  const errs  = document.querySelectorAll(".result.err").length
+  document.getElementById("summaryText").textContent =
+    `Done: ${oks} passed, ${errs} failed`
+}
+
+// auto-run on load
+window.onload = () => setTimeout(runAll, 500)
+</script>
+</body>
+</html>
