@@ -1,5 +1,4 @@
 [build]
-rootDirectory = "backend"
 builder = "NIXPACKS"
 
 [deploy]
