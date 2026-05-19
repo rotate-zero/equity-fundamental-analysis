@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from chart_router import router as chart_router
+from fastapi.staticfiles import StaticFiles
 import asyncio
 import httpx
 import feedparser
@@ -275,3 +276,5 @@ async def get_ticker(symbol: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+app.mount("/", StaticFiles(directory="dist", html=True), name="static")
