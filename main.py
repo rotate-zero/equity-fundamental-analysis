@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from chart_router import router as chart_router
-from fastapi.staticfiles import StaticFiles
+#from fastapi.staticfiles import StaticFiles
 import asyncio
 import httpx
 import feedparser
@@ -77,9 +77,9 @@ def _parse_news_rss(symbol):
         return []
 
 
-@app.get("/")
-async def root():
-    return {"message": "Ticker API running", "example": "/ticker/AAPL"}
+#@app.get("/")
+#async def root():
+#    return {"message": "Ticker API running", "example": "/ticker/AAPL"}
 
 
 @app.get("/health")
@@ -277,4 +277,5 @@ async def get_ticker(symbol: str):
 def health():
     return {"status": "ok"}
 
+from fastapi.staticfiles import StaticFiles
 app.mount("/", StaticFiles(directory="dist", html=True), name="static")
